@@ -10,25 +10,29 @@ THis document records some work complementing that carried out by Foud and VIAPP
 
 Load some libraries
 ```{r loadlibs}
-library(needs)
-needs(tidyverse, psych, lavaan, lavaan.survey, haven, magrittr, nlme,
-      stringr, janitor, slipper)
-
+library(pacman)
+p_load(tidyverse, psych, lavaan, lavaan.survey, haven, magrittr, nlme,
+      stringr, janitor)
+devtools::install_github('jtleek/slipper')
+library(slipper)
 ```
 
 Load the data
 ```{r loaddata, echo=FALSE}
 
 # Some inconsistency in the data structure STILL TO BE REPAIRED
-all <- read_spss("data/FINAL 2014 all I and 2G data plus demog_1.sav")
+all <- read_spss("data/FINAL 2014 all I and 2G data plus demog_1.sav") %>% 
+    clean_names()
 
 # Try reading in file found in Fouads's folder
 load("data/2014vpldata2016212.Rdata")
 
-id_equal.dat <- read_spss("data/2014 equal groups indiv and group (1).sav") %>% 
+id_equal.dat <- read_spss("data/2014 equal groups indiv and group (1).sav") %>%
+    clean_names() %>% 
    mutate(group_condition = ifelse(condition == 0, "individual_equality",
                                    "group_equality"))
 id_unequal.dat <- read_spss("data/2014 unequal indiv and group_1 (1).sav") %>% 
+    clean_names() %>% 
     mutate(
         group_condition =  case_when(
             condition == 1 ~ "individual_mobility",
@@ -41,13 +45,13 @@ id_all.dat <- full_join(id_equal.dat,id_unequal.dat) %>%
    clean_names() %>% 
    rename(ingroup_favoritism = igf,
           outgroup_aid = ogg) %>% 
-   mutate(equality_cond    = ifelse(str_sub(gamename,1,1) == "E","equality",
+   mutate(equality_cond    = ifelse(str_sub(game_name,1,1) == "E","equality",
                                     "inequality")) %>% 
    mutate(indiv_group_cond =  case_when(
-              str_sub(gamename, 2,2) == "I" ~ "individual",
-              str_sub(gamename, 2,2) == "M" ~ "wealthy_minority",
-              str_sub(gamename, 2,2) ==  1 ~ "group",
-              str_sub(gamename, 2,2) ==  2 ~ "group",
+              str_sub(game_name, 2,2) == "I" ~ "individual",
+              str_sub(game_name, 2,2) == "M" ~ "wealthy_minority",
+              str_sub(game_name, 2,2) ==  1 ~ "group",
+              str_sub(game_name, 2,2) ==  2 ~ "group",
               TRUE ~ "not found"
               )
    )
@@ -103,11 +107,11 @@ OK, lets try Figure 2 now
 
 id_all.dat %>% 
     group_by(group_condition) %>% 
-    summarise(sd = sd(deltatokens, na.rm = T)/10)
+    summarise(sd = sd(delta_tokens, na.rm = T)/10)
 
 id_all.dat %>% 
-    select(group_condition, deltatokens, uid) %>% 
-    spread(key = group_condition, value = deltatokens) %>% 
+    select(group_condition, delta_tokens, uid) %>% 
+    spread(key = group_condition, value = delta_tokens) %>% 
     select(-uid) -> x
 
 x %>% summarise_all(funs(sd),na.rm = T)  -> z
@@ -128,7 +132,7 @@ group_boot_cis$group_condition <- c("group_equality", "group_inequality",
 group_boot_cis$Standard_deviation <- t(z)
 
 rm(x, group_equality, group_inequality, individual_equality, individual_mobility,
-   wealthy_minority, q, z)
+   wealthy_minority, z)
 
 ggplot(group_boot_cis, aes(x = group_condition, y = Standard_deviation))  +
     geom_bar(position=position_dodge(), stat="identity", color="red", 
@@ -150,38 +154,38 @@ Now let's test the sds to see if they differ.  We try the Fligner-Killeen test
 
 ```{r cfvariances}
 id_all.dat$group_condition <- factor(id_all.dat$group_condition)
-fligner.test(deltatokens ~ group_condition, data=id_all.dat)
+fligner.test(delta_tokens ~ group_condition, data=id_all.dat)
 
 (data=id_all.dat %>% filter(group_condition == "group_equality" | 
                             group_condition == "group_inequality") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "group_equality" | 
                             group_condition == "individual_equality") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "group_equality" | 
                             group_condition == "individual_mobility") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "group_equality" | 
                             group_condition == "wealthy_minority") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "group_inequality" | 
                             group_condition == "individual_equality") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "group_inequality" | 
                             group_condition == "individual_mobility") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "group_inequality" | 
                             group_condition == "wealthy_minority") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "individual_equality" | 
                             group_condition == "individual_mobility") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "individual_equality" | 
                             group_condition == "wealthy_minority") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 (data=id_all.dat %>% filter(group_condition == "individual_mobility" | 
                             group_condition == "wealthy_minority") %$%
-                            fligner.test(deltatokens ~ group_condition))
+                            fligner.test(delta_tokens ~ group_condition))
 
 ```
 
@@ -204,7 +208,7 @@ id_all.dat %>%
     omega(nfactors=1)
 
 id_all.dat %>% 
-    select(pid1:pid3) %>% 
+    select(p_id1:p_id3) %>% 
     omega(nfactors=1)
 
 id_all.dat %>% 
@@ -219,8 +223,8 @@ Can try the Mixed models test on change in social id over time
 ```{r check_change}
 
 id_all.dat %>% 
-    select(uid, id, pid, group_condition, gameno) %>% 
-    gather(key = time, value = socid, id:pid) %>% 
+    select(uid, id, p_id, group_condition, gameno) %>% 
+    gather(key = time, value = socid, id:p_id) %>% 
     mutate(uid = factor(uid)) -> id_all_lme.dat
 
 

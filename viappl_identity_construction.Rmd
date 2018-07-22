@@ -2,6 +2,8 @@
 title: "Constructing identity analysis"
 output: html_notebook
 author: Colin Tredoux
+editor_options: 
+  chunk_output_type: inline
 ---
 
 THis document records some work complementing that carried out by Foud and VIAPPL team - constructing identity document. 
@@ -11,13 +13,13 @@ THis document records some work complementing that carried out by Foud and VIAPP
 Load some libraries
 ```{r loadlibs}
 library(pacman)
+devtools::install_github('jtleek/slipper'); library(slipper)
 p_load(tidyverse, psych, lavaan, lavaan.survey, haven, magrittr, nlme,
       stringr, janitor)
-devtools::install_github('jtleek/slipper')
-library(slipper)
+
 ```
 
-Load the data
+# Load the data
 ```{r loaddata, echo=FALSE}
 
 # Some inconsistency in the data structure STILL TO BE REPAIRED
@@ -70,6 +72,8 @@ The variables we need are IGF, OGG (OA in the article), rich (status, I think), 
 
 Let's try and construct Fig 1 in the MS
 
+# Fig 1
+
 ```{r fig1_recon}
 
 mns <- id_all.dat %>% 
@@ -98,6 +102,7 @@ ggsave("Figure_group_by_giving.pdf")
 
 OK, lets try Figure 2 now
 
+# Fig2
 
 ```{r fig2_recon}
 
@@ -152,6 +157,8 @@ ggsave("Figure_group_by_sd_token.pdf")
 
 Now let's test the sds to see if they differ.  We try the Fligner-Killeen test
 
+# Cf Standard deviations
+
 ```{r cfvariances}
 id_all.dat$group_condition <- factor(id_all.dat$group_condition)
 fligner.test(delta_tokens ~ group_condition, data=id_all.dat)
@@ -201,6 +208,8 @@ Indiv mobility is not smaller than wealthy minority
 
 We need to check reliability of id measures
 
+# Reliability
+
 ```{r check_reliability}
 
 id_all.dat %>% 
@@ -219,6 +228,8 @@ id_all.dat %>%
 Seems good if one looks only at omega and alpha but there is a warning about an unusual case?
 
 Can try the Mixed models test on change in social id over time
+
+# Check change in socid
 
 ```{r check_change}
 
@@ -267,6 +278,8 @@ lsmeans(d, list(pairwise ~ time|group_condition), adjust = "tukey")
 
 There is an interaction, let's look at the plot
 
+# Plot change in socid over time
+
 ```{r plot_inter}
 
 id_all_lme.dat %>% 
@@ -289,7 +302,16 @@ ggsave("Figure_group_by_socid_time.pdf")
  
 ```
 
+Let's build rough SEM to simplify analysis
 
+# SEM socid simple
+
+```{r sem_1}
+
+
+
+
+```
 
 
 

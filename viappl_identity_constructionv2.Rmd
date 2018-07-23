@@ -1,0 +1,321 @@
+---
+title: "Constructing identity analysis"
+output: html_notebook
+author: Colin Tredoux
+---
+
+THis document records some work complementing that carried out by Foud and VIAPPL team - constructing identity document. 
+
+# Preliminaries
+
+Load some libraries
+```{r loadlibs}
+library(pacman)
+devtools::install_github('jtleek/slipper')
+p_load(slipper, tidyverse, psych, lavaan, lavaan.survey, haven, magrittr, nlme,
+      stringr, janitor)
+# devtools::install_github('jtleek/slipper')
+# library(slipper)
+```
+
+# Load the data
+```{r loaddata, echo=FALSE}
+
+# Some inconsistency in the data structure STILL TO BE REPAIRED
+all <- read_spss("data/FINAL 2014 all I and 2G data plus demog_1.sav") %>% 
+    clean_names()
+
+# Try reading in file found in Fouads's folder
+load("data/2014vpldata2016212.Rdata")
+
+id_equal.dat <- read_spss("data/2014 equal groups indiv and group (1).sav") %>%
+    clean_names() %>% 
+   mutate(group_condition = ifelse(condition == 0, "individual_equality",
+                                   "group_equality"))
+id_unequal.dat <- read_spss("data/2014 unequal indiv and group_1 (1).sav") %>% 
+    clean_names() %>% 
+    mutate(
+        group_condition =  case_when(
+            condition == 1 ~ "individual_mobility",
+            condition == 2 ~ "group_inequality",
+            condition == 3 ~ "wealthy_minority"
+        )
+    )
+     
+id_all.dat <- full_join(id_equal.dat,id_unequal.dat) %>% 
+   clean_names() %>% 
+   rename(ingroup_favoritism = igf,
+          outgroup_aid = ogg) %>% 
+   mutate(equality_cond    = ifelse(str_sub(game_name,1,1) == "E","equality",
+                                    "inequality")) %>% 
+   mutate(indiv_group_cond =  case_when(
+              str_sub(game_name, 2,2) == "I" ~ "individual",
+              str_sub(game_name, 2,2) == "M" ~ "wealthy_minority",
+              str_sub(game_name, 2,2) ==  1 ~ "group",
+              str_sub(game_name, 2,2) ==  2 ~ "group",
+              TRUE ~ "not found"
+              )
+   )
+              
+  
+        
+```
+
+Total cases matches that set down by Fouad in the document. 
+
+We need to identify the variables, we do this from the file "Apr17 untrimmed output inequality.txt" which we find in the Dropbox. This tells us the vars for the unequal groups data file.
+
+This tells us that the clustering structure used was gameno, with grouping factor = condition. 
+
+The variables we need are IGF, OGG (OA in the article), rich (status, I think), gameno, ID (pre-id), pID (post-id), deltatokens (I assume the diff between beginning and end of game).
+
+Let's try and construct Fig 1 in the MS
+
+# Fig 1
+
+```{r fig1_recon}
+
+mns <- id_all.dat %>% 
+    select(group_condition, ingroup_favoritism:outgroup_aid) %>% 
+    gather(key = dv, value = amt_given, ingroup_favoritism:outgroup_aid) %>% 
+    group_by(group_condition, dv) %>% 
+    summarise(mean=mean(amt_given),
+              sd = sd(amt_given),
+              n = n(),
+              ci = (sd/sqrt(n))*1.96)
+
+ggplot(mns, aes(x = group_condition, y = mean, fill = dv))  +
+    geom_bar(position=position_dodge(), stat="identity") +
+    geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci),
+                  width=.2,                    # Width of the error bars
+                  position=position_dodge(.9)) +
+    coord_flip() +
+    theme_bw() +
+    labs(x = "Group Condition", y = "Mean proportion given over 40 rounds") +
+    theme(legend.title = element_blank(), 
+          legend.position = c(0.85,0.5))
+ggsave("Figure_group_by_giving.pdf")
+
+
+```
+
+OK, lets try Figure 2 now
+
+# Fig 2
+```{r fig2_recon}
+
+# Build dataframe that contains standard deviations for conditions
+# on Token change and let's bootstrap that a few times to get CIs
+
+
+id_all.dat %>% 
+    group_by(group_condition) %>% 
+    summarise(sd = sd(delta_tokens, na.rm = T)/10)
+
+id_all.dat %>% 
+    select(group_condition, delta_tokens, uid) %>% 
+    spread(key = group_condition, value = delta_tokens) %>% 
+    select(-uid) -> x
+
+x %>% summarise_all(funs(sd),na.rm = T)  -> z
+
+
+x %>% slipper_ci(sd(group_equality, na.rm = T),B=1000) -> group_equality
+x %>% slipper_ci(sd(group_inequality, na.rm = T),B=1000) -> group_inequality
+x %>% slipper_ci(sd(individual_equality, na.rm = T),B=1000) -> individual_equality
+x %>% slipper_ci(sd(individual_mobility, na.rm = T),B=1000) -> individual_mobility
+x %>% slipper_ci(sd(wealthy_minority, na.rm = T),B=1000) -> wealthy_minority
+group_boot_cis <- full_join(group_equality, group_inequality) %>% 
+    full_join(individual_equality) %>% full_join(individual_mobility) %>% 
+    full_join(wealthy_minority)
+
+group_boot_cis$group_condition <- c("group_equality", "group_inequality", 
+                                    "individual_equality", "individual_mobility",
+                                    "wealthy_minority")
+group_boot_cis$Standard_deviation <- t(z)
+
+rm(x, group_equality, group_inequality, individual_equality, individual_mobility,
+   wealthy_minority, z)
+
+ggplot(group_boot_cis, aes(x = reorder(group_condition, Standard_deviation),
+                                       y = Standard_deviation))  +
+    geom_bar(position=position_dodge(), stat="identity", color="red", 
+             fill = "light grey") +
+    geom_errorbar(aes(ymin=ci_low, ymax=ci_high),
+                  width=.2,                    # Width of the error bars
+                  position=position_dodge(.9)) +
+    # coord_flip() +
+    theme_bw() +
+    labs(x = "",
+         y = "Standard deviation of token change over 40 rounds",
+         caption = "I bars are bootstrap confidence intervals (1000 samples") 
+ggsave("Figure_group_by_sd_token.pdf")
+
+
+```
+
+Now let's test the sds to see if they differ.  We try the Fligner-Killeen test
+# Test SDs
+
+```{r cfvariances}
+id_all.dat$group_condition <- factor(id_all.dat$group_condition)
+fligner.test(delta_tokens ~ group_condition, data=id_all.dat)
+
+(data=id_all.dat %>% filter(group_condition == "group_equality" | 
+                            group_condition == "group_inequality") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "group_equality" | 
+                            group_condition == "individual_equality") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "group_equality" | 
+                            group_condition == "individual_mobility") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "group_equality" | 
+                            group_condition == "wealthy_minority") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "group_inequality" | 
+                            group_condition == "individual_equality") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "group_inequality" | 
+                            group_condition == "individual_mobility") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "group_inequality" | 
+                            group_condition == "wealthy_minority") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "individual_equality" | 
+                            group_condition == "individual_mobility") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "individual_equality" | 
+                            group_condition == "wealthy_minority") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+(data=id_all.dat %>% filter(group_condition == "individual_mobility" | 
+                            group_condition == "wealthy_minority") %$%
+                            fligner.test(delta_tokens ~ group_condition))
+
+```
+
+There were 10 tests in that, so if we use Bonferroni, then alpha = .005
+If so, then the following comparisons are significant
+Group equality is smaller than all other conditions
+Group inequality is smaller than Individual equality
+Group inequality is NOT smaller than Individual mobility
+Group inequality is NOT smaller than Wealthy Minority
+Indiv equality is smaller than INdiv mobility
+INdiv equality is not smaller than wealthy minority
+Indiv mobility is not smaller than wealthy minority
+
+We need to check reliability of id measures
+# Reliability analysis
+
+```{r check_reliability}
+
+id_all.dat %>% 
+    select(id1:id3) %>% 
+    omega(nfactors=1)
+
+id_all.dat %>% 
+    select(p_id1:p_id3) %>% 
+    omega(nfactors=1)
+
+id_all.dat %>% 
+    select(id1:id3) %>% 
+    summary()
+```
+
+Seems good if one looks only at omega and alpha but there is a warning about an unusual case?
+
+Can try the Mixed models test on change in social id over time
+
+# Does social id change over time?
+
+```{r check_change}
+
+id_all.dat %>% 
+    select(uid, id, p_id, group_condition, gameno) %>% 
+    gather(key = time, value = socid, id:p_id) %>% 
+    mutate(uid = factor(uid)) -> id_all_lme.dat
+
+
+a <- lme(socid ~ 1, random = ~1|uid, 
+                 data = id_all_lme.dat,
+                 na.action = na.omit) 
+
+b <- lme(socid ~ time, random = ~1|uid, 
+                 data = id_all_lme.dat,
+                 na.action = na.omit) 
+
+c <- lme(socid ~ time, random = ~1|gameno/uid, 
+                 data = id_all_lme.dat,
+                 na.action = na.omit) 
+
+d <- lme(socid ~ time*group_condition, random = ~1|uid, 
+                data = id_all_lme.dat,
+                na.action = na.omit,
+                method="ML") 
+
+# Re-do model in order to do posthocs
+library(lme4)
+d <- lmer(socid ~ time*group_condition + (1|uid), 
+                data = id_all_lme.dat,
+                na.action = na.omit)
+d <- lmerTest::lmer(socid ~ time*group_condition + (1|uid), 
+                data = id_all_lme.dat,
+                na.action = na.omit)
+summary(d)
+anova(d)
+# Look at posthoc tests
+library(lsmeans)
+# lsmeans(model2way, ~group_space|community) 
+# contrast(model2way, method = "eff") 
+lsmeans(d, ~time|group_condition)
+lsmeans(d, list(pairwise ~ time|group_condition), adjust = "tukey")
+
+
+    ```
+
+There is an interaction, let's look at the plot
+# Fig interaction
+
+```{r plot_inter}
+
+id_all_lme.dat %>% 
+    group_by(group_condition, time) %>% 
+    summarise(mean_socid = mean(socid, na.rm = T),
+              sd = sd(socid, na.rm = T),
+              n= n(),
+              ci = (sd/sqrt(n))*1.96) -> id_all_lme_mns.dat
+
+ggplot(id_all_lme_mns.dat, aes(x = group_condition, y = mean_socid, fill = time)) +
+    geom_bar(position=position_dodge(), stat="identity") +
+    geom_errorbar(aes(ymin=mean_socid-ci, ymax=mean_socid+ci),
+                  width=.2,                    # Width of the error bars
+                  position=position_dodge(.9)) +
+    theme_bw() +
+    labs(x = "Group Condition", y = "Social Identification") +
+    theme(legend.title = element_blank(), 
+          legend.position = c(0.80,0.90))
+ggsave("Figure_group_by_socid_time.pdf")
+ 
+```
+
+Let's turn to the SEM models
+
+# SEM models
+
+```{r sem1}
+
+# First we need to rename social id change var
+id_all.dat %<>% 
+    rename(social_id_change = d_id)
+
+# We want a simple model, as shown in the diagram below
+
+
+
+
+ 
+```
+
+
+
+

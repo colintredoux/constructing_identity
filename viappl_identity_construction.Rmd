@@ -2,6 +2,8 @@
 title: "Constructing identity analysis"
 output: html_notebook
 author: Colin Tredoux
+editor_options: 
+  chunk_output_type: inline
 ---
 
 THis document records some work complementing that carried out by Foud and VIAPPL team - constructing identity document. 
@@ -11,13 +13,13 @@ THis document records some work complementing that carried out by Foud and VIAPP
 Load some libraries
 ```{r loadlibs}
 library(pacman)
+devtools::install_github('jtleek/slipper'); library(slipper)
 p_load(tidyverse, psych, lavaan, lavaan.survey, haven, magrittr, nlme,
       stringr, janitor)
-devtools::install_github('jtleek/slipper')
-library(slipper)
+
 ```
 
-Load the data
+# Load the data
 ```{r loaddata, echo=FALSE}
 
 # Some inconsistency in the data structure STILL TO BE REPAIRED
@@ -70,6 +72,8 @@ The variables we need are IGF, OGG (OA in the article), rich (status, I think), 
 
 Let's try and construct Fig 1 in the MS
 
+# Fig 1
+
 ```{r fig1_recon}
 
 mns <- id_all.dat %>% 
@@ -98,6 +102,7 @@ ggsave("Figure_group_by_giving.pdf")
 
 OK, lets try Figure 2 now
 
+# Fig2
 
 ```{r fig2_recon}
 
@@ -152,6 +157,8 @@ ggsave("Figure_group_by_sd_token.pdf")
 
 Now let's test the sds to see if they differ.  We try the Fligner-Killeen test
 
+# Cf Standard deviations
+
 ```{r cfvariances}
 id_all.dat$group_condition <- factor(id_all.dat$group_condition)
 fligner.test(delta_tokens ~ group_condition, data=id_all.dat)
@@ -201,6 +208,8 @@ Indiv mobility is not smaller than wealthy minority
 
 We need to check reliability of id measures
 
+# Reliability
+
 ```{r check_reliability}
 
 id_all.dat %>% 
@@ -219,6 +228,8 @@ id_all.dat %>%
 Seems good if one looks only at omega and alpha but there is a warning about an unusual case?
 
 Can try the Mixed models test on change in social id over time
+
+# Check change in socid
 
 ```{r check_change}
 
@@ -267,6 +278,8 @@ lsmeans(d, list(pairwise ~ time|group_condition), adjust = "tukey")
 
 There is an interaction, let's look at the plot
 
+# Plot change in socid over time
+
 ```{r plot_inter}
 
 id_all_lme.dat %>% 
@@ -289,7 +302,174 @@ ggsave("Figure_group_by_socid_time.pdf")
  
 ```
 
+Let's build rough SEM to simplify analysis
+
+# SEM socid simple
+
+```{r sem_1}
+
+# rename delta socid to make interp easier
+# and make equality a factor
+id_all.dat %<>% rename(socid_change = d_id) %>% 
+    mutate(equality_cond = factor(equality_cond),
+           gameno = factor(gameno))
+
+# socid_model <- '
+#         level: 1
+#             socid_change ~ outgroup_aid + ingroup_favoritism + equality_cond
+#         level: 2
+#             socid_change ~~ socid_change
+#             ingroup_favoritism ~~ equality_cond
+#     '
+
+socid_model <- '    
+            socid_change        ~   ingroup_favoritism + outgroup_aid + 
+                                    start_tokens
+            ingroup_favoritism + outgroup_aid ~ start_tokens
+'
 
 
+
+socid_fit <- sem(socid_model, data = id_all.dat, group = "group_condition")
+summary(socid_fit, fit.measures = TRUE)
+resid(socid_fit, type="normalized" )
+
+id_all.dat %>% filter(group_condition == "individual_mobility") -> x
+    sem(socid_model, data = x) -> socid_fit_1
+summary(socid_fit_1)
+id_all.dat %>% filter(group_condition == "group_equality") -> x
+    sem(socid_model, data = x) -> socid_fit_1
+id_all.dat %>% filter(group_condition == "group_inequality") -> x
+    sem(socid_model, data = x) -> socid_fit_1
+id_all.dat %>% filter(group_condition == "wealthy_minority") -> x
+    sem(socid_model, data = x) -> socid_fit_1    
+summary(socid_fit_1)
+
+
+
+```
+
+There are some tough questions about dependencies between the variables. Let's explore some of htese
+
+```{r depeda, warning=FALSE}
+
+id_all.dat %<>% mutate(token_change = end_tokens - start_tokens) %>% 
+                filter(token_change < 40)
+
+# id_all.dat %>% select(token_change, socid_change, start_tokens,
+#                       outgroup_aid, ingroup_favoritism) %>% 
+#     pairs.panels()
+
+id_all.dat %>% select(token_change, socid_change, start_tokens,
+                      outgroup_aid, ingroup_favoritism, group_condition) %>% 
+                filter(group_condition == "individual_equality") %>% 
+    pairs.panels()
+
+id_all.dat %>% select(token_change, socid_change, start_tokens,
+                      outgroup_aid, ingroup_favoritism, group_condition) %>% 
+                    filter(group_condition == "group_equality") %>% 
+    pairs.panels()
+
+id_all.dat %>% select(token_change, socid_change, start_tokens,
+                      outgroup_aid, ingroup_favoritism, group_condition) %>% 
+                    filter(group_condition == "group_inequality") %>% 
+    pairs.panels()
+
+id_all.dat %>% select(token_change, socid_change, start_tokens,
+                      outgroup_aid, ingroup_favoritism, group_condition) %>% 
+                    filter(group_condition == "individual_mobility") %>% 
+    pairs.panels()
+
+id_all.dat %>% select(token_change, socid_change, start_tokens,
+                      outgroup_aid, ingroup_favoritism, group_condition) %>% 
+                    filter(group_condition == "wealthy_minority") %>% 
+    pairs.panels()
+
+    
+```
+
+# Model again
+# SEM socid simple
+
+```{r sem_2}
+
+# Equate variances
+
+id_all.dat %<>% mutate(socid_change = socid_change/10,
+                      token_change = token_change/40,
+                      atart_tokens = start_tokens/40)
+
+socid_model_2 <- '    
+            socid_change        ~   token_change
+            token_change ~ outgroup_aid + ingroup_favoritism 
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+'
+
+
+socid_model_3 <- '    
+            socid_change        ~   token_change + start_tokens
+            token_change ~ outgroup_aid + ingroup_favoritism + start_tokens
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'
+
+
+
+socid_fit_2 <- sem(socid_model_2, data = id_all.dat, 
+                   group = "group_condition")
+summary(socid_fit_2, fit.measures = TRUE)
+resid(socid_fit, type="normalized" )
+
+id_all.dat %>% filter(group_condition == "individual_mobility") -> x
+    sem(socid_model_2, data = x) -> socid_fit_2
+summary(socid_fit_1)
+id_all.dat %>% filter(group_condition == "group_equality") -> x
+    sem(socid_model_2, data = x) -> socid_fit_1
+
+id_all.dat %>% filter(group_condition == "group_inequality") -> x
+    sem(socid_model_3, data = x) -> socid_fit_3
+    summary(socid_fit_3)
+    resid(socid_fit_3, type = "normalized")
+    
+# That gives a good fit, what if we do group analysis on it
+id_all.dat %>% filter(inequality == 1) -> x    
+    sem(socid_model_3, data = x, group = "group_condition") -> socid_fit_3
+    summary(socid_fit_3, fit.measures = TRUE)
+    resid(socid_fit_3, type = "normalized")
+ 
+# The residuals from that tell us that the relationship that
+# doesn't fit is ingp_fav and scid_change
+# We specify the model separately
+ 
+socid_model_4 <- '    
+            socid_change        ~   token_change + start_tokens 
+                                    + ingroup_favoritism
+            token_change ~ outgroup_aid + ingroup_favoritism + start_tokens
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'     
+      
+id_all.dat %>% filter(group_condition == "wealthy_minority") -> x    
+    sem(socid_model_4, data = x) -> socid_fit_4
+    summary(socid_fit_4, fit.measures = TRUE)
+    resid(socid_fit_4, type = "normalized")   
+    
+# Let's mod that some more for sig paths only
+socid_model_5 <- '    
+            socid_change        ~   start_tokens 
+                                    + ingroup_favoritism
+            token_change ~ outgroup_aid 
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'     
+    
+id_all.dat %>% filter(group_condition == "wealthy_minority") -> x    
+    sem(socid_model_5, data = x) -> socid_fit_5
+    summary(socid_fit_5, fit.measures = TRUE)
+    resid(socid_fit_5, type = "normalized") 
+
+
+
+```
 
 

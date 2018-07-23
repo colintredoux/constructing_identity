@@ -304,18 +304,127 @@ Let's turn to the SEM models
 
 ```{r sem1}
 
-# First we need to rename social id change var
+# First we need to rename social id change var and token_change
+# and equate variances approximately
 id_all.dat %<>% 
-    rename(social_id_change = d_id)
+    rename(socid_change = d_id) %>% 
+    mutate(token_change = end_tokens - start_tokens) %>% 
+    filter(token_change < 40) %>%               # remove very high unusual value
+    mutate(socid_change = socid_change/10,
+                      token_change = token_change/40,
+                      atart_tokens = start_tokens/40)
 
-# We want a simple model, as shown in the diagram below
+# We construct a simple model first for the inequality conditions
+# and run a group analysis on it
 
+# Define model
+socid_model_1 <- '    
+            socid_change        ~   token_change + start_tokens
+            token_change        ~   outgroup_aid + ingroup_favoritism + 
+                                     start_tokens
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'
 
+# Run sem, with group condition as grouping var and removing equality
+# conditions
+id_all.dat %>% filter(inequality == 1) -> id_all_temp.dat 
 
+socid_fit_1 <- sem(socid_model_1, data = id_all_temp.dat, 
+                  group = "group_condition")      
+summary(socid_fit_1, fit.measures = TRUE)
+resid(socid_fit_1, type="normalized" )
 
  
 ```
 
+
+That analysis tells us that the proposed model does not fit each model equally well and the wealthy minority group appears to have poorer fit to the common model. 
+
+We can verify this by running a test in which the regression coefficients are forced to be the same.
+
+```{r sem2}
+
+socid_fit_1 <- sem(socid_model_1, data = id_all_temp.dat, 
+                  group = "group_condition",
+                  group.equal = "regressions")      
+summary(socid_fit_1, fit.measures = TRUE)
+resid(socid_fit_1, type="normalized" )
+
+```
+
+We therefore fit each of the models separately and use the normalised residuals to adjust the models to achieve better fit.
+
+```{r sem3}
+
+id_all.dat %>% filter(group_condition == "individual_mobility") -> x
+    sem(socid_model_1, data = x) -> socid_fit_1
+    summary(socid_fit_1)
+    resid(socid_fit_1, type = "normalized")
+    
+# Model fits well, but revise for ns paths
+    socid_model_1_im <- '    
+            socid_change        ~   token_change 
+            token_change        ~   ingroup_favoritism + 
+                                     start_tokens
+            ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'
+
+id_all.dat %>% filter(group_condition == "individual_mobility") -> x
+    sem(socid_model_1_im, data = x) -> socid_fit_1
+    summary(socid_fit_1)
+    resid(socid_fit_1, type = "normalized")  
+    
+    
+id_all.dat %>% filter(group_condition == "group_inequality") -> x
+    sem(socid_model_1, data = x) -> socid_fit_3
+    summary(socid_fit_3)
+    resid(socid_fit_1, type = "normalized")
+    
+# Model does not fit well, revise
+    
+    socid_model_4 <- '    
+            socid_change        ~   token_change + start_tokens 
+                                    + ingroup_favoritism
+            token_change ~ outgroup_aid + ingroup_favoritism + start_tokens
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'   
+    
+id_all.dat %>% filter(group_condition == "wealthy_minority") -> x
+    sem(socid_model_1, data = x) -> socid_fit_3
+    summary(socid_fit_3)
+    resid(socid_fit_1, type = "normalized")
+
+socid_model_4 <- '    
+            socid_change        ~   token_change + start_tokens 
+                                    + ingroup_favoritism
+            token_change ~ outgroup_aid + ingroup_favoritism + start_tokens
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'     
+      
+id_all.dat %>% filter(group_condition == "wealthy_minority") -> x    
+    sem(socid_model_4, data = x) -> socid_fit_4
+    summary(socid_fit_4, fit.measures = TRUE)
+    resid(socid_fit_4, type = "normalized")   
+    
+# Let's mod that some more for sig paths only
+socid_model_5 <- '    
+            socid_change        ~   start_tokens 
+                                    + ingroup_favoritism
+            token_change ~ outgroup_aid 
+            outgroup_aid + ingroup_favoritism ~ start_tokens
+            outgroup_aid ~~ ingroup_favoritism 
+'     
+    
+id_all.dat %>% filter(group_condition == "wealthy_minority") -> x    
+    sem(socid_model_5, data = x) -> socid_fit_5
+    summary(socid_fit_5, fit.measures = TRUE)
+    resid(socid_fit_5, type = "normalized")
+
+```
 
 
 
